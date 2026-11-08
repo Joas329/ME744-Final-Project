@@ -3,11 +3,25 @@
 <package format="3">
   <name>ml_ekf</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>servo + ArUco camera rig in Gazebo Fortress</description>
   <maintainer email="joaquinphilco@hotmail.com">joas329</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>rosgraph_msgs</depend>
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>tf2_ros</depend>
+  <depend>rviz2</depend>
+  <depend>python3-opencv</depend>
+  <depend>python3-numpy</depend>
+  <depend>python3-pandas</depend>
+  <depend>python3-matplotlib</depend>
+  <test_depend>python3-pytest</test_depend>
+
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
