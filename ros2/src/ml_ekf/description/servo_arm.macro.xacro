@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- rig geometry [m]; must match the real build and nekf_rig_sim/plant.py (COM) -->
+  <xacro:property name="pivot_z" value="0.35"/>
+  <xacro:property name="arm_len" value="0.17"/>
+  <xacro:property name="com" value="0.075"/>      <!-- pivot to centre of mass -->
+  <xacro:property name="tag_r" value="0.12"/>     <!-- pivot to arm-tag centre -->
+  <xacro:property name="tag_size" value="0.04"/>  <!-- printed tag incl. white margin -->
+  <xacro:property name="mesh_dir" value="package://ml_ekf/textures"/>
+
+  <xacro:macro name="box_visual" params="xyz size rgba">
+    <visual>
+      <origin xyz="${xyz}"/>
+      <geometry><box size="${size}"/></geometry>
+      <material name="${rgba}">
+        <color rgba="${rgba}"/>
+      </material>
+    </visual>
+  </xacro:macro>
+
+  <xacro:macro name="tag_visual" params="tag_id xyz">
+    <visual>
+      <origin xyz="${xyz}"/>
+      <geometry>
+        <mesh filename="${mesh_dir}/aruco_tag_${tag_id}.dae" scale="${tag_size} 1 ${tag_size}"/>
+      </geometry>
+    </visual>
+  </xacro:macro>
+
+  <xacro:macro name="servo_arm" params="mass i_cm damping friction color">
+    <link name="base_link">
+      <xacro:box_visual xyz="0 0.03 ${pivot_z / 2}" size="0.04 0.04 ${pivot_z}" rgba="0.3 0.3 0.3 1"/>
+      <xacro:box_visual xyz="0 0.005 ${pivot_z}" size="0.055 0.03 0.04" rgba="0.1 0.1 0.1 1"/>
+      <xacro:box_visual xyz="0.11 0.008 ${pivot_z}" size="0.06 0.004 0.06" rgba="0.95 0.95 0.95 1"/>
+      <xacro:tag_visual tag_id="1" xyz="0.11 0.005 ${pivot_z}"/>
+      <inertial>
+        <mass value="1.0"/>
+        <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      </inertial>
+    </link>
+
+    <!-- moving arm: horn, bar and the arm tag (id 0); the inertia gives exactly the drawn J and mgl -->
+    <link name="arm_link">
+      <xacro:box_visual xyz="0 -0.012 0" size="0.03 0.004 0.03" rgba="0.9 0.9 0.9 1"/>
+      <xacro:box_visual xyz="0 -0.016 ${-arm_len / 2 + 0.01}" size="0.016 0.004 ${arm_len}" rgba="${color}"/>
+      <xacro:tag_visual tag_id="0" xyz="0 -0.0185 ${-tag_r}"/>
+      <inertial>
+        <origin xyz="0 0 ${-com}"/>
+        <mass value="${mass}"/>
+        <!-- a thin bar along z: i_cm about the joint axis (y), x close to it, z small -->
+        <inertia ixx="${0.95 * i_cm}" ixy="0" ixz="0" iyy="${i_cm}" iyz="0" izz="${0.1 * i_cm}"/>
+      </inertial>
+    </link>
+
+    <joint name="servo_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="arm_link"/>
+      <origin xyz="0 0 ${pivot_z}"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-0.3" upper="3.45" effort="100" velocity="100"/>
+      <dynamics damping="${damping}" friction="${friction}"/>
+    </joint>
+  </xacro:macro>
+</robot>

@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="servo_arm_gazebo" params="servo_mode kp kd tau_max">
+    <gazebo>
+      <!-- true joint state on /world/rig/model/servo_arm/joint_state -->
+      <plugin filename="ignition-gazebo-joint-state-publisher-system" name="ignition::gazebo::systems::JointStatePublisher">
+        <joint_name>servo_joint</joint_name>
+      </plugin>
+      <xacro:if value="${servo_mode == 'builtin'}">
+        <!-- fallback: Gazebo's own PID (no deadband, delay or lag); command on .../joint/servo_joint/0/cmd_pos -->
+        <plugin filename="ignition-gazebo-joint-position-controller-system"
+                name="ignition::gazebo::systems::JointPositionController">
+          <joint_name>servo_joint</joint_name>
+          <p_gain>${kp}</p_gain><i_gain>0</i_gain><d_gain>${kd}</d_gain>
+          <cmd_max>${tau_max}</cmd_max><cmd_min>${-tau_max}</cmd_min>
+        </plugin>
+      </xacro:if>
+      <xacro:unless value="${servo_mode == 'builtin'}">
+        <!-- default: torque from the servo_driver node (full servo law); on .../joint/servo_joint/cmd_force -->
+        <plugin filename="ignition-gazebo-apply-joint-force-system"
+                name="ignition::gazebo::systems::ApplyJointForce">
+          <joint_name>servo_joint</joint_name>
+        </plugin>
+      </xacro:unless>
+    </gazebo>
+  </xacro:macro>
+</robot>

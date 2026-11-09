@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+  Budget servo rig: a hobby servo on a post swings a light arm about +y; ArUco tag 0 sits near the arm tip and
+  tag 1 is fixed beside the pivot as the reference.  World frame: z up, pivot at (0, 0, pivot_z), the arm hangs
+  along -z at theta = 0, so gravity gives -m g l sin(theta), exactly the filters' model.
+
+  Plant parameters are xacro args, so one file serves every drawn plant:
+    xacro servo_arm.urdf.xacro mass:=0.12 i_cm:=2.1e-4 damping:=0.01 friction:=0.02 sim:=true
+  The launch file computes mass and i_cm from the drawn J and mgl (nekf_rig_sim/plant.py).
+
+  sim:=true    adds the fixed joint to the world and the Gazebo plugins (servo_arm.gazebo.xacro)
+  sim:=false   kinematic copy for RViz (one per filter, coloured by `color`)
+-->
+<robot name="servo_arm" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="mass" default="0.1223"/> <!-- kg   (nominal mgl 0.09 N m with com 0.075 m) -->
+  <xacro:arg name="i_cm" default="1.5e-4"/> <!-- kg m^2 about the centre of mass, joint axis -->
+  <xacro:arg name="damping" default="0.0"/> <!-- N m s / rad -->
+  <xacro:arg name="friction" default="0.0"/> <!-- N m, Coulomb -->
+  <xacro:arg name="color" default="0.75 0.6 0.4 1"/>
+  <xacro:arg name="sim" default="false"/>
+  <xacro:arg name="servo_mode" default="python"/>  <!-- python: torque from servo_driver; builtin: Gazebo PID -->
+  <xacro:arg name="kp" default="1.0"/>
+  <xacro:arg name="kd" default="0.05"/>
+  <xacro:arg name="tau_max" default="1.0"/>
+
+  <xacro:include filename="servo_arm.macro.xacro"/>
+
+  <xacro:servo_arm mass="$(arg mass)" i_cm="$(arg i_cm)" damping="$(arg damping)" friction="$(arg friction)" color="$(arg color)"/>
+
+  <xacro:if value="$(arg sim)">
+    <link name="world"/>
+    <joint name="world_to_base" type="fixed">
+      <parent link="world"/><child link="base_link"/>
+    </joint>
+    <xacro:include filename="servo_arm.gazebo.xacro"/>
+    <xacro:servo_arm_gazebo servo_mode="$(arg servo_mode)" kp="$(arg kp)" kd="$(arg kd)" tau_max="$(arg tau_max)"/>
+  </xacro:if>
+</robot>
