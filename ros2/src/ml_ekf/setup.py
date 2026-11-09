@@ -1,3 +1,4 @@
+from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'ml_ekf'
@@ -10,12 +11,15 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ("share/" + package_name + "/launch", glob("launch/*.py")),
+        ("share/" + package_name + "/config", glob("config/*")),
+        ("share/" + package_name + "/textures", glob("textures/*.png")),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='joas329',
+    maintainer='Joaquin Philco',
     maintainer_email='joaquinphilco@hotmail.com',
-    description='TODO: Package description',
+    description='servo + ArUco camera rig in Gazebo Fortress',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
