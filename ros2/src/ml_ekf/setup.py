@@ -25,6 +25,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'true_servo = ml_ekf.true_servo:main',
+            'nominal_servo = ml_ekf.nominal_servo:main',
+            'servo_command = ml_ekf.servo_command:main',
         ],
     },
 )

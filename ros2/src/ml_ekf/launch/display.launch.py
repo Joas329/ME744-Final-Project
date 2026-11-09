@@ -19,6 +19,8 @@ def launch_setup(context, *args, **kwargs):
     gazebo = LaunchConfiguration("gazebo").perform(context) == "true"
     world = LaunchConfiguration("world").perform(context)
     world_name = LaunchConfiguration("world_name").perform(context)
+    servo = LaunchConfiguration("servo").perform(context)
+    command = LaunchConfiguration("command").perform(context)
     sim_time = {"use_sim_time": gazebo}  # in Gazebo every node must follow the simulation clock
 
     # sim:=true adds the fixed joint to the world and the Gazebo plugins (servo_arm.gazebo.xacro)
@@ -84,13 +86,30 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
-    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz]
+    # servo: target angle -> motor torque. "true" = the hidden real-servo electronics, "nominal" = ideal PD
+    nodes = []
+
+    true_servo = Node(package="ml_ekf", executable="true_servo", parameters=[sim_time], output="screen")
+    nominal_servo = Node(package="ml_ekf", executable="nominal_servo", parameters=[sim_time], output="screen")
+
+    if servo in ("true", "nominal"):
+        if servo == "true":
+            nodes.append(true_servo)
+        elif servo == "nominal":
+            nodes.append(nominal_servo)
+
+    if command != "none":
+        nodes.append(Node(package="ml_ekf", executable="servo_command", parameters=[{"mode": command, **sim_time}], output="screen"))
+
+    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes]
 
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("gazebo", default_value="false", description="true: simulate in Gazebo"),
         DeclareLaunchArgument("world", default_value=str(share / "description/rig.sdf.xacro"), description="world file"),
         DeclareLaunchArgument("world_name", default_value="rig", description="the <world name> inside that file"),
+        DeclareLaunchArgument("servo", default_value="true", description="true | nominal | none"),
+        DeclareLaunchArgument("command", default_value="none", description="steps | sine | chirp | none"),
 
         OpaqueFunction(function=launch_setup),
     ])
