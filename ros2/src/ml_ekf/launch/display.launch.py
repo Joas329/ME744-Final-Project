@@ -21,6 +21,8 @@ def launch_setup(context, *args, **kwargs):
     world_name = LaunchConfiguration("world_name").perform(context)
     servo = LaunchConfiguration("servo").perform(context)
     command = LaunchConfiguration("command").perform(context)
+    record = LaunchConfiguration("record").perform(context)
+    duration = float(LaunchConfiguration("duration").perform(context))
     sim_time = {"use_sim_time": gazebo}  # in Gazebo every node must follow the simulation clock
 
     # sim:=true adds the fixed joint to the world and the Gazebo plugins (servo_arm.gazebo.xacro)
@@ -109,9 +111,10 @@ def launch_setup(context, *args, **kwargs):
     # ******************* #
     # ** Data Recorder ** #
     # ******************* #
-    data_recorder = Node(package="ml_ekf", executable="recorder", parameters=[sim_time], output="screen")
+    if record:
+        nodes.append(Node(package="ml_ekf", executable="recorder", output="screen", parameters=[{"out": record, "duration": duration, **sim_time}]))
 
-    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor, data_recorder]
+    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor]
 
 def generate_launch_description():
     return LaunchDescription([
@@ -120,6 +123,8 @@ def generate_launch_description():
         DeclareLaunchArgument("world_name", default_value="rig", description="the <world name> inside that file"),
         DeclareLaunchArgument("servo", default_value="true", description="true | nominal | none"),
         DeclareLaunchArgument("command", default_value="none", description="steps | sine | chirp | none"),
+        DeclareLaunchArgument("record", default_value="", description="path of the .npz to log to ('' = no recording)"),
+        DeclareLaunchArgument("duration", default_value="30.0", description="recorder: sim seconds to log (0 = until Ctrl+C)"),
 
         OpaqueFunction(function=launch_setup),
     ])
