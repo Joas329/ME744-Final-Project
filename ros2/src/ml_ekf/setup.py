@@ -28,6 +28,7 @@ setup(
             'true_servo = ml_ekf.true_servo:main',
             'nominal_servo = ml_ekf.nominal_servo:main',
             'servo_command = ml_ekf.servo_command:main',
+            'angle_sensor = ml_ekf.angle_sensor:main',
         ],
     },
 )

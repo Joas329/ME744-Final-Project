@@ -101,7 +101,13 @@ def launch_setup(context, *args, **kwargs):
     if command != "none":
         nodes.append(Node(package="ml_ekf", executable="servo_command", parameters=[{"mode": command, **sim_time}], output="screen"))
 
-    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes]
+    # ****************** #
+    # ** Angle sensor ** #
+    # ****************** #
+
+    angle_sensor = Node(package="ml_ekf", executable="angle_sensor", parameters=[sim_time], output="screen")
+
+    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor]
 
 def generate_launch_description():
     return LaunchDescription([
