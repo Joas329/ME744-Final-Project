@@ -104,10 +104,14 @@ def launch_setup(context, *args, **kwargs):
     # ****************** #
     # ** Angle sensor ** #
     # ****************** #
-
     angle_sensor = Node(package="ml_ekf", executable="angle_sensor", parameters=[sim_time], output="screen")
 
-    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor]
+    # ******************* #
+    # ** Data Recorder ** #
+    # ******************* #
+    data_recorder = Node(package="ml_ekf", executable="recorder", parameters=[sim_time], output="screen")
+
+    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor, data_recorder]
 
 def generate_launch_description():
     return LaunchDescription([
