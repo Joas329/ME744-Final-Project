@@ -12,6 +12,9 @@ from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription, Opa
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.parameter_descriptions import ParameterValue
+from launch.actions import (DeclareLaunchArgument, EmitEvent, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction, RegisterEventHandler, SetEnvironmentVariable)
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 
 share = Path(get_package_share_directory("ml_ekf"))
 
@@ -111,8 +114,11 @@ def launch_setup(context, *args, **kwargs):
     # ******************* #
     # ** Data Recorder ** #
     # ******************* #
-    if record:
-        nodes.append(Node(package="ml_ekf", executable="recorder", output="screen", parameters=[{"out": record, "duration": duration, **sim_time}]))
+        if record:
+            recorder = Node(package="ml_ekf", executable="recorder", output="screen", parameters=[{"out": record, "duration": duration, "estimators": ",".join(estimators), **sim_time}])
+            nodes.append(recorder)
+        # when the recorder has saved its run, shut the whole launch down (Gazebo included)
+        nodes.append(RegisterEventHandler(OnProcessExit(target_action=recorder, on_exit=[EmitEvent(event=Shutdown(reason="recording finished"))])))
 
     return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor]
 
