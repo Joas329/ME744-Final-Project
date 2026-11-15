@@ -123,11 +123,11 @@ def launch_setup(context, *args, **kwargs):
     # ******************* #
     # ** Data Recorder ** #
     # ******************* #
-        if record:
-            recorder = Node(package="ml_ekf", executable="recorder", output="screen", parameters=[{"out": record, "duration": duration, "estimators": ",".join(estimators), **sim_time}])
-            nodes.append(recorder)
-        # when the recorder has saved its run, shut the whole launch down (Gazebo included)
-        nodes.append(RegisterEventHandler(OnProcessExit(target_action=recorder, on_exit=[EmitEvent(event=Shutdown(reason="recording finished"))])))
+    if record:
+        recorder = Node(package="ml_ekf", executable="recorder", output="screen", parameters=[{"out": record, "duration": duration, "estimators": ",".join(estimators), **sim_time}])
+        nodes.append(recorder)
+    # when the recorder has saved its run, shut the whole launch down (Gazebo included)
+    nodes.append(RegisterEventHandler(OnProcessExit(target_action=recorder, on_exit=[EmitEvent(event=Shutdown(reason="recording finished"))])))
 
     return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor]
 

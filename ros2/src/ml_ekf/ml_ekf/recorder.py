@@ -1,5 +1,7 @@
 # Recorder: logs one run to a single .npz on a fixed sim-time grid, ready for an offline EKF.
 # ros2 run ml_ekf recorder --ros-args -p use_sim_time:=true -p out:=runs/sine_01.npz -p duration:=30.0
+#   -p estimators:=b1,gru   also logs /estimators/<name>/state of each live estimator:
+#   est_<name>_x (T, 2) mean and est_<name>_P (T, 2, 2) covariance on the same grid (NaN where missing)
 
 import math
 import os
@@ -15,17 +17,29 @@ def stamp(msg) -> float:
     return msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
 
 def hold(t_ev: np.ndarray, v_ev: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Zero-order hold: the last event value at or before each t (NaN before the first event)."""
+    # Zero-order hold: the last event value at or before each t (NaN before the first event).
     i = np.searchsorted(t_ev, t, side="right") - 1
     out = np.where(i >= 0, v_ev[np.clip(i, 0, None)], np.nan) if len(t_ev) else np.full(t.shape, np.nan)
     return out
+
+def est_to_grid(raw: np.ndarray, t: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    # Estimator messages (t, theta, omega, P_tt, P_tw, P_ww) onto the grid t: mean (T, 2), covariance (T, 2, 2).
+    x, P = np.full((len(t), 2), np.nan), np.full((len(t), 2, 2), np.nan)
+    if len(raw):
+        k = np.rint((raw[:, 0] - t[0]) / dt).astype(int)
+        ok = (k >= 0) & (k < len(t))
+        k, e = k[ok], raw[ok]
+        x[k] = e[:, 1:3]
+        P[k, 0, 0], P[k, 0, 1], P[k, 1, 0], P[k, 1, 1] = e[:, 3], e[:, 4], e[:, 4], e[:, 5]
+    return x, P
 
 def to_grid(js, tg, tq, zm, dt: float) -> dict[str, np.ndarray]:
     """Resample the raw event lists onto t_k = t0 + k dt. Pure NumPy, so it is testable without ROS."""
     js, tg, tq, zm = (np.asarray(a, float).reshape(-1, c) for a, c in ((js, 3), (tg, 2), (tq, 2), (zm, 2)))
     for a in (js, tg, tq, zm):
         a[:] = a[np.argsort(a[:, 0], kind="stable")]
-    t0, t1 = tg[0, 0], js[-1, 0]
+
+    t0, t1 = math.ceil(tg[0, 0] / dt - 1e-9) * dt, js[-1, 0] # grid on multiples of dt, like the estimators
     t = t0 + dt * np.arange(int(math.floor((t1 - t0) / dt)) + 1)
     z = np.full(t.shape, np.nan)
     k = np.rint((zm[:, 0] - t0) / dt).astype(int)
@@ -42,6 +56,8 @@ class Recorder(Node):
         self.sigma = self.declare_parameter("sigma", float("nan")).value # pass the sensor's sigma to store it
         self.duration = self.declare_parameter("duration", 0.0).value # sim s after the first command; 0 = until Ctrl+C
         out = self.declare_parameter("out", "").value
+        names = self.declare_parameter("estimators", "").value # comma-separated, e.g. "b1,gru"
+        self.est = {n.strip(): [] for n in names.split(",") if n.strip()}
         self.out = Path(os.path.expanduser(out or "~/ml_ekf_runs/run.npz"))
         self.js, self.tg, self.tq, self.zm = [], [], [], []
         self.done = False
@@ -51,6 +67,9 @@ class Recorder(Node):
         self.create_subscription(JointState, "/servo/angle_meas", self.on_z, 10)
         self.create_subscription(Float64, "/servo/target", lambda m: self.tg.append((self.now(), m.data)), 10)
         self.create_subscription(Float64, "/servo/torque", lambda m: self.tq.append((self.now(), m.data)), 100)
+
+        for n, buf in self.est.items():
+            self.create_subscription(JointState, f"/estimators/{n}/state",  lambda m, b=buf: b.append((stamp(m), *m.position[:1], *m.velocity[:1], *m.effort[:3])), 50)
 
         self.get_logger().info(f"recording to {self.out}" + (f" for {self.duration} s" if self.duration else ""))
 
@@ -70,15 +89,28 @@ class Recorder(Node):
         if m.position:
             self.zm.append((stamp(m), m.position[0]))
 
+    def est_arrays(self, t: np.ndarray) -> dict[str, np.ndarray]:
+        out = {}
+        for n, buf in self.est.items():
+            raw = np.array([b for b in buf if len(b) == 6], float).reshape(-1, 6)
+            out[f"est_{n}_x"], out[f"est_{n}_P"] = est_to_grid(raw, t, self.dt)
+            out[f"raw_est_{n}"] = raw
+            if not len(raw):
+                self.get_logger().warn(f"no messages from estimator {n}")
+        return out
+
     def save(self) -> None:
         if not self.tg or len(self.js) < 2:
             self.get_logger().warn("nothing to save: no /servo/target or /joint_states received")
             return
         g = to_grid(self.js, self.tg, self.tq or [(0.0, 0.0)], self.zm or [(0.0, np.nan)], self.dt)
         self.out.parent.mkdir(parents=True, exist_ok=True)
+
         np.savez_compressed(self.out, **g, dt=self.dt, sigma=self.sigma,
+                            **self.est_arrays(g["t"]),
                             raw_joint_states=np.array(self.js), raw_target=np.array(self.tg),
                             raw_torque=np.array(self.tq), raw_meas=np.array(self.zm))
+
         n_z = int(np.isfinite(g["z"]).sum())
         print(f"[recorder] saved {self.out}: {len(g['t'])} steps ({g['t'][-1] - g['t'][0]:.1f} s sim), "
               f"{n_z} measurements", flush=True)
