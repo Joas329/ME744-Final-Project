@@ -26,6 +26,7 @@ def launch_setup(context, *args, **kwargs):
     command = LaunchConfiguration("command").perform(context)
     record = LaunchConfiguration("record").perform(context)
     duration = float(LaunchConfiguration("duration").perform(context))
+    estimators = [n.strip() for n in LaunchConfiguration("estimators").perform(context).split(",") if n.strip()]
     sim_time = {"use_sim_time": gazebo}  # in Gazebo every node must follow the simulation clock
 
     # sim:=true adds the fixed joint to the world and the Gazebo plugins (servo_arm.gazebo.xacro)
@@ -111,6 +112,14 @@ def launch_setup(context, *args, **kwargs):
     # ****************** #
     angle_sensor = Node(package="ml_ekf", executable="angle_sensor", parameters=[sim_time], output="screen")
 
+    # **************** #
+    # ** Estimators ** #
+    # **************** #
+    # one live filter per name, each on /estimators/<name>/state; the name is also the kind (b1, ...) for now
+    for n in estimators:
+        nodes.append(Node(package="ml_ekf", executable="estimator", name=f"estimator_{n}", output="screen",
+                          parameters=[{"name": n, "kind": n, **sim_time}]))
+
     # ******************* #
     # ** Data Recorder ** #
     # ******************* #
@@ -130,6 +139,7 @@ def generate_launch_description():
         DeclareLaunchArgument("servo", default_value="true", description="true | nominal | none"),
         DeclareLaunchArgument("command", default_value="none", description="steps | sine | chirp | none"),
         DeclareLaunchArgument("record", default_value="", description="path of the .npz to log to ('' = no recording)"),
+        DeclareLaunchArgument("estimators", default_value="", description="live filters to run, comma-separated (e.g. b1)"),
         DeclareLaunchArgument("duration", default_value="30.0", description="recorder: sim seconds to log (0 = until Ctrl+C)"),
 
         OpaqueFunction(function=launch_setup),
