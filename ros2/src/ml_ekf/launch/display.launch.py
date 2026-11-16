@@ -18,6 +18,18 @@ from launch.events import Shutdown
 
 share = Path(get_package_share_directory("ml_ekf"))
 
+def kv(text):
+    # "a=1,b=0.5,mode=steps" -> {"a": 1.0, "b": 0.5, "mode": "steps"}: extra node parameters from one launch argument
+    out = {}
+    for item in filter(None, (t.strip() for t in text.split(","))):
+        k, v = item.split("=", 1)
+        try:
+            v = float(v) # numbers as float: the servo and command nodes declare all their numbers as floats
+        except ValueError:
+            pass
+        out[k.strip()] = v
+    return out
+
 def launch_setup(context, *args, **kwargs):
     gazebo = LaunchConfiguration("gazebo").perform(context) == "true"
     world = LaunchConfiguration("world").perform(context)
@@ -26,8 +38,13 @@ def launch_setup(context, *args, **kwargs):
     command = LaunchConfiguration("command").perform(context)
     record = LaunchConfiguration("record").perform(context)
     duration = float(LaunchConfiguration("duration").perform(context))
+    seed = int(LaunchConfiguration("seed").perform(context))
+    headless = LaunchConfiguration("headless").perform(context) == "true"
+    rtf = LaunchConfiguration("rtf").perform(context)
+    servo_params = kv(LaunchConfiguration("servo_params").perform(context))
+    command_params = kv(LaunchConfiguration("command_params").perform(context))
     estimators = [n.strip() for n in LaunchConfiguration("estimators").perform(context).split(",") if n.strip()]
-    sim_time = {"use_sim_time": gazebo}  # in Gazebo every node must follow the simulation clock
+    sim_time = {"use_sim_time": gazebo} # in Gazebo every node must follow the simulation clock
 
     # sim:=true adds the fixed joint to the world and the Gazebo plugins (servo_arm.gazebo.xacro)
     desc = ParameterValue(Command(["xacro ", str(share / "description/servo_arm.urdf.xacro"), f" sim:={'true' if gazebo else 'false'}"]), value_type=str)
@@ -54,7 +71,7 @@ def launch_setup(context, *args, **kwargs):
     # ** Gazebo ** #
     # ************ #
     out = Path.home() / ".ros" / "ml_ekf_world.sdf"
-    out.write_text(xacro.process_file(world).toxml())
+    out.write_text(xacro.process_file(world, mappings={"rtf": rtf}).toxml())
     world = str(out)
 
     res = str(share.parent)
@@ -63,7 +80,7 @@ def launch_setup(context, *args, **kwargs):
 
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(str(Path(get_package_share_directory("ros_gz_sim")) / "launch/gz_sim.launch.py")),
-        launch_arguments={"gz_args": f"-r {world}"}.items(),
+        launch_arguments={"gz_args": f"-r {'-s ' if headless else ''}{world}"}.items(), # -s: server only, no GUI
     )
 
     spawn = Node(
@@ -95,7 +112,7 @@ def launch_setup(context, *args, **kwargs):
     # servo: target angle -> motor torque. "true" = the hidden real-servo electronics, "nominal" = ideal PD
     nodes = []
 
-    true_servo = Node(package="ml_ekf", executable="true_servo", parameters=[sim_time], output="screen")
+    true_servo = Node(package="ml_ekf", executable="true_servo", parameters=[{**servo_params, **sim_time}], output="screen")
     nominal_servo = Node(package="ml_ekf", executable="nominal_servo", parameters=[sim_time], output="screen")
 
     if servo in ("true", "nominal"):
@@ -105,12 +122,13 @@ def launch_setup(context, *args, **kwargs):
             nodes.append(nominal_servo)
 
     if command != "none":
-        nodes.append(Node(package="ml_ekf", executable="servo_command", parameters=[{"mode": command, **sim_time}], output="screen"))
+        nodes.append(Node(package="ml_ekf", executable="servo_command", parameters=[{"mode": command, "seed": seed, **command_params, **sim_time}], output="screen"))
 
     # ****************** #
     # ** Angle sensor ** #
     # ****************** #
-    angle_sensor = Node(package="ml_ekf", executable="angle_sensor", parameters=[sim_time], output="screen")
+    # its own seed, so the sensor noise is not tied to the command sequence
+    angle_sensor = Node(package="ml_ekf", executable="angle_sensor", parameters=[{"seed": seed + 100000, **sim_time}], output="screen")
 
     # **************** #
     # ** Estimators ** #
@@ -126,10 +144,10 @@ def launch_setup(context, *args, **kwargs):
     if record:
         recorder = Node(package="ml_ekf", executable="recorder", output="screen", parameters=[{"out": record, "duration": duration, "estimators": ",".join(estimators), **sim_time}])
         nodes.append(recorder)
-    # when the recorder has saved its run, shut the whole launch down (Gazebo included)
-    nodes.append(RegisterEventHandler(OnProcessExit(target_action=recorder, on_exit=[EmitEvent(event=Shutdown(reason="recording finished"))])))
+        # when the recorder has saved its run, shut the whole launch down (Gazebo included)
+        nodes.append(RegisterEventHandler(OnProcessExit(target_action=recorder, on_exit=[EmitEvent(event=Shutdown(reason="recording finished"))])))
 
-    return [*env, gz_sim, robot_state_publisher, spawn, bridge, rviz, *nodes, angle_sensor]
+    return [*env, gz_sim, robot_state_publisher, spawn, bridge, *([] if headless else [rviz]), *nodes, angle_sensor]
 
 def generate_launch_description():
     return LaunchDescription([
@@ -141,6 +159,11 @@ def generate_launch_description():
         DeclareLaunchArgument("record", default_value="", description="path of the .npz to log to ('' = no recording)"),
         DeclareLaunchArgument("estimators", default_value="", description="live filters to run, comma-separated (e.g. b1)"),
         DeclareLaunchArgument("duration", default_value="30.0", description="recorder: sim seconds to log (0 = until Ctrl+C)"),
+        DeclareLaunchArgument("seed", default_value="0", description="seed for the command sequence (sensor noise uses seed + 100000)"),
+        DeclareLaunchArgument("headless", default_value="false", description="true: no Gazebo GUI and no RViz (batch recording)"),
+        DeclareLaunchArgument("rtf", default_value="0.5", description="Gazebo real-time factor target"),
+        DeclareLaunchArgument("servo_params", default_value="", description="true_servo overrides, e.g. delay=0.03,tau_stall=0.7"),
+        DeclareLaunchArgument("command_params", default_value="", description="servo_command overrides, e.g. amp=0.8,freq=1.2"),
 
         OpaqueFunction(function=launch_setup),
     ])
