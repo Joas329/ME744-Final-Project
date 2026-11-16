@@ -39,10 +39,41 @@ def launch_cmd(mode, seed, path, duration, rtf, cmd_p, servo_p, estimators) -> l
         cmd.append(f"estimators:={estimators}")
     return cmd
 
+# Everything one launch starts. Shutdown does not always reach Gazebo's server (started through ruby), so a
+# leftover sim keeps publishing /clock and /joint_states into the next run and every run gets slower.
+LEFTOVERS = ["ign gazebo", "gz sim", "parameter_bridge", "ros_gz_sim/create", "robot_state_publisher", "rviz2",
+             "lib/ml_ekf/(true_servo|nominal_servo|servo_command|angle_sensor|recorder|estimator)( |$)"]
+
+def leftovers() -> list[int]:
+    pids = set()
+    for pat in LEFTOVERS:
+        r = subprocess.run(["pgrep", "-f", pat], capture_output=True, text=True)
+        pids |= {int(x) for x in r.stdout.split()}
+    return sorted(pids - {os.getpid()})
+
+def cleanup() -> int:
+    # Stop whatever a previous launch left behind: SIGINT, then SIGKILL after 5 s. Returns how many were found.
+    pids = leftovers()
+    for sig in (signal.SIGINT, signal.SIGKILL):
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+        for _ in range(50):
+            if not leftovers():
+                return len(pids)
+            time.sleep(0.1)
+        pids = leftovers()
+    return len(pids)
+
 def run(cmd: list[str], timeout: float, log: Path) -> bool:
     # One launch in its own process group, so a hung Gazebo can be killed with everything it started.
     with open(log, "w") as f:
-        p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+        # own Gazebo transport partition per run, so even a sim that survives cleanup cannot talk to this one
+        env = {**os.environ, "IGN_PARTITION": f"ml_ekf_{os.getpid()}_{time.time_ns()}"}
+        env["GZ_PARTITION"] = env["IGN_PARTITION"]
+        p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT, start_new_session=True, env=env)
         try:
             return p.wait(timeout=timeout) == 0
         except subprocess.TimeoutExpired:
@@ -102,6 +133,9 @@ def main() -> None:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         t0 = time.time()
+        n_left = cleanup()
+        if n_left:
+            print(f"  (stopped {n_left} processes left over from an earlier launch)", flush=True)
         ok = run(cmd, timeout, path.with_suffix(".log"))
         problem = check(path, a.duration)
         status = "ok" if problem is None else f"FAILED: {problem}" + ("" if ok else " (launch error or timeout)")
@@ -110,6 +144,7 @@ def main() -> None:
                                             "command_params": cmd_p, "servo_params": servo_p, "ok": problem is None}
         manifest_path.write_text(json.dumps(manifest, indent=1))
     if not a.dry_run:
+        cleanup()
         bad = [k for k, v in manifest.items() if not v["ok"]]
         print(f"[dataset] done in {(time.time() - t_all) / 60:.0f} min; {len(bad)} failed" + (f": {bad}" if bad else ""))
 
