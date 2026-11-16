@@ -8,20 +8,23 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
-from .ekf import EKF, ServoArmModel
+from .ekf import EKF, AugServoArmModel, ServoArmModel
 
 def make_b1(p, x0):
     model = ServoArmModel(p["J"], p["b"], p["mgl"], p["kp"], p["kd"])
-    return EKF(model, p["dt"], p["q_omega"], p["sigma"] ** 2, x0=x0)
+    return EKF(model, p["dt"], [0.0, p["q_omega"]], p["sigma"] ** 2, x0=x0)
 
-KINDS = {"b1": make_b1}
+def make_b1aug(p, x0):
+    model = AugServoArmModel(p["J"], p["b"], p["mgl"], p["kp"], p["kd"])
+    return EKF(model, p["dt"], [0.0, p["q_omega_aug"], p["q_d"]], p["sigma"] ** 2, x0=(*x0, 0.0))
+
+KINDS = {"b1": make_b1, "b1aug": make_b1aug}
 
 class Estimator(Node):
     def __init__(self):
         super().__init__("estimator")
         d = ServoArmModel()
-        defaults = {"name": "b1", "kind": "b1", "joint": "servo_joint", "dt": 0.01, "n_sub": 10, "lag": 0.03,
-                    "q_omega": 5.0, "sigma": 0.01, "J": d.J, "b": d.b, "mgl": d.mgl, "kp": d.kp, "kd": d.kd}
+        defaults = {"name": "b1", "kind": "b1", "joint": "servo_joint", "dt": 0.01, "n_sub": 10, "lag": 0.03, "q_omega": 5.0, "q_omega_aug": 100.0, "q_d": 1e6, "sigma": 0.01, "J": d.J, "b": d.b, "mgl": d.mgl, "kp": d.kp, "kd": d.kd}
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
         if self.p["kind"] not in KINDS:
             raise ValueError(f"unknown kind {self.p['kind']!r}; known: {sorted(KINDS)}")
