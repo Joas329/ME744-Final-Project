@@ -32,6 +32,7 @@ setup(
             'recorder = ml_ekf.recorder:main',
             'estimator = ml_ekf.estimator:main',
             'make_dataset = ml_ekf.make_dataset:main',
+            'gru = ml_ekf.gru:main',
         ],
     },
 )
