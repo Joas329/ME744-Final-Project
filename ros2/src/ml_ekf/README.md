@@ -1,5 +1,7 @@
 # ML assisted EKF
 
+![Gazebo simulation](ros2/src/ml_ekf/resource/simulation.png)
+
 ME744 final project (UWaterloo, Fall 2026). The idea is to see if we can improve the prediction step of an EKF by attaching a small neural network (a GRU) to the physics model of a servo joint.
 
 ## Experiment
@@ -54,7 +56,7 @@ Mean RMSE over 18 runs per split (B3 is one training seed for now):
 |---|---|---|---|---|
 | B1 | 3.77 deg | 2.27 rad/s | 4.26 deg | 2.63 rad/s |
 | B1-aug | 2.85 deg | 1.70 rad/s | 3.04 deg | 1.93 rad/s |
-| B3 | 2.20 deg | 1.30 rad/s | 2.60 deg | 1.58 rad/s |
+| B3 | 2.20 deg | 1.30 rad/s | 2.62 deg | 1.59 rad/s |
 
 B3 improves on B1-aug by about 23% on test and 14-18% on ood.
 
@@ -62,5 +64,3 @@ B3 improves on B1-aug by about 23% on test and 14-18% on ood.
 
 - More GRU seeds, then S4D and pruning
 - Run B3 live in ROS next to B1 and B1-aug
-
-
