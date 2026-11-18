@@ -1,6 +1,6 @@
 # ML assisted EKF
 
-![Gazebo simulation](ros2/src/ml_ekf/resource/simulation.png)
+![Gazebo simulation](resource/simulation.png)
 
 ME744 final project (UWaterloo, Fall 2026). The idea is to see if we can improve the prediction step of an EKF by attaching a small neural network (a GRU) to the physics model of a servo joint.
 
